@@ -1,0 +1,39 @@
+#!/bin/bash
+
+URL="${1:-}"
+DIR="${2:-secret}"
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+  echo "Usage: $0 url [directory]"
+  echo ""
+  echo "  url           The base URL to fuzz (e.g. https://example.com)"
+  echo "  [directory]   The directory to fuzz (defaults to 'secret')"
+  exit 0
+fi
+
+if [ -z "$URL" ]; then
+  echo "Usage: $0 url [directory]" >&2
+  exit 1
+fi
+
+declare -A PATHS=(
+  [$DIR]="HTTP/1.1 403 Forbidden\r\n\r\n"
+  [$DIR/]="HTTP/1.1 200 OK\r\n\r\n"
+  [$DIR/.]="HTTP/1.1 200 OK\r\n\r\n"
+  [./$DIR/..]="HTTP/1.1 200 OK\r\n\r\n"
+  [;/$DIR]="HTTP/1.1 200 OK\r\n\r\n"
+  [/.;/$DIR]="HTTP/1.1 200 OK\r\n\r\n"
+  [//;//$DIR]="HTTP/1.1 200 OK\r\n\r\n"
+  [$DIR.json]="HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"key\": \"value\"}\r\n"
+)
+
+for path in "${!PATHS[@]}"; do
+  expected_response="${PATHS[$path]}"
+  actual_response=$(curl -sI -w "%{http_code}" --request "GET" "$URL/$path" -o /dev/null)
+
+  if [ "$actual_response" = "$expected_response" ]; then
+    echo "Path $path: HTTP $actual_response"
+  else
+    echo "Path $path: Got HTTP $actual_response, expected HTTP ${expected_response:11}"
+  fi
+done
